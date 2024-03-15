@@ -6,8 +6,6 @@ pub const Converter = struct {
 
     allocator: std.mem.Allocator,
     csvBuf: []u8,
-    hdrBuf: []u8,
-    rowBuf: []u8,
     keys: [][]const u8,
     out: BufferedWriter,
 
@@ -19,8 +17,6 @@ pub const Converter = struct {
             .allocator = allocator,
             .out = std.io.bufferedWriter(writer),
             .csvBuf = try allocator.alloc(u8, rowBufSize),
-            .hdrBuf = try allocator.alloc(u8, rowBufSize),
-            .rowBuf = try allocator.alloc(u8, rowBufSize),
             .keys = undefined,
         };
 
@@ -29,8 +25,6 @@ pub const Converter = struct {
 
     pub fn deinit(self: *Self) void {
         if (self.csvBuf) self.allocator.free(self.csvBuf);
-        if (self.hdrBuf) self.allocator.free(self.hdrBuf);
-        if (self.rowBuf) self.allocator.free(self.rowBuf);
     }
 
     // Convert a CSV file. rowBufSize should be greater than the length (bytes)
@@ -43,30 +37,13 @@ pub const Converter = struct {
         var fields = std.ArrayList([]const u8).init(std.heap.page_allocator);
         var isFirst: bool = true;
         var line: u64 = 1;
-        var f: usize = 0;
 
         while (try tk.next()) |token| {
             switch (token) {
                 .field => |val| {
-                    // Copy the incoming field slice to the row buffer.
-                    const ln: usize = f + val.len;
-
-                    if (isFirst) {
-                        // Copy all the fields in the first row to a separate buffer
-                        // to be retained throughout the lifetime of the program.
-                        std.mem.copyForwards(u8, self.hdrBuf[f..ln], val);
-                        try fields.append(self.hdrBuf[f..ln]);
-                    } else {
-                        // Row buffer can be discarded after processing each individual row.
-                        std.mem.copyForwards(u8, self.rowBuf[f..ln], val);
-                        try fields.append(self.rowBuf[f..ln]);
-                    }
-
-                    f = ln;
+                    try fields.append(val);
                 },
                 .row_end => {
-                    f = 0;
-
                     // Move the first row (header) fields to be reused with every subsequent
                     // row as JSON keys.
                     if (isFirst) {
